@@ -1,0 +1,105 @@
+---
+title: "Machine Learning Project"
+author: "Fragkas Vasileios"
+date: "Sunday, August 24, 2014"
+output: html_document
+---
+
+For this assignment I have been tasked with creating a model to predict if a certain weight lifting excersice has been done correctly or not. The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+First, I will load the nessecary libraries and read the data sets
+
+```{r}
+library(caret)
+library(plyr)
+data<-read.csv("pml-training.csv")
+validation<-read.csv("pml-testing.csv")
+```
+
+Then I split the dataset into two sets. I decided to use 80% of the data for training and 20% of the data for testing, because we have a validation set.
+
+```{r}
+inTrain <- createDataPartition(data$classe, p = 0.8, list=FALSE)
+train <- data[ inTrain,]
+test <- data[-inTrain,]
+```
+
+By checking variables we determine that the fidationst 5 columns (variables) correspond to index, subject and datetime data, and are thus irrelevant to the prediction, so they must be excluded (of course the same will be done with test and validation).
+
+```{r}
+train<-train[,6:160]
+test<-test[,6:160]
+validation<-validation[,6:160]
+```
+
+Another thing we determine is that che datasets are ordered by the variable we want to predict. I will shuffle the training dataset in order to not allow for monotonous regression to confuse the learning algorith. This is not necessary for the test or the validation set, since it will be dealt in a case by case prediction.
+
+```{r}
+train=train[sample(nrow(train)),]
+```
+
+Now I shall do some Analysis. For starters I will change all column classes to numeric.
+
+```{r}
+train<-cbind(as.data.frame(lapply(train[1:154],as.numeric)), train[,155])
+names(train)[155]<-"classe"
+test<-cbind(as.data.frame(lapply(test[1:154],as.numeric)), test[,155])
+names(test)[155]<-"classe"
+validation<-cbind(as.data.frame(lapply(validation[1:154],as.numeric)), validation[,155])
+names(validation)[155]<-"num"
+```
+
+Now, I will check for missing values in the training data. So I will find out how many observations without any missin g values exist.
+
+```{r}
+sum(complete.cases(train[,]))
+```
+
+There are too few observations for a good training set. So I checked if it is possible to exclude variables (columns) with missing values. I counted the missing values per column, then creating a logical vector for variables without missing values. Then the elements of the logical vector were summed (counted).
+
+
+```{r}
+nas<-as.vector(lapply(lapply(train[,], is.na), sum)==0)
+sum(nas)
+```
+
+There are enough variables left, and so I remove those variables from the sets.
+
+```{r}
+train<-train[,nas]
+test<-test[,nas]
+validation<-validation[,nas]
+```
+
+For PrePocessing, I will create a new Data Set excluding all Variables with Near Zero Variance.
+
+```{r}
+nsv <- nearZeroVar(train)
+train <- train[, -nsv]
+test<-test[,-nsv]
+validation<-validation[,-nsv]
+```
+
+So we end up with a little more than 50 variables. Now it is time to train the model. I used repeated Cross-Validation.
+
+
+```{r}
+trCtrl <- trainControl(method = "repeatedcv")
+model<-train(classe ~ ., data=train, method="gbm", trControl = trCtrl, verbose=F)
+```
+
+
+Now I will predict the test set to create a Confusion Matrix.
+
+```{r}
+preds<-predict(model,test)
+cm<-confusionMatrix(preds,test$classe)
+```
+
+The final estimated out of sample error is
+
+```{r}
+1-as.numeric(cm$overall[1])
+```
+
+and this concludes the analysis. It should be noted that, since a test set is provided (named validation in this analysis), it was not nessecary to divide the data to training and test sets. However, I chose to do so because I consider the 20 observations of the validation set too few to provide an accurate estimation of the out of sample error rate.
